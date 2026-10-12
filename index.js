@@ -5,7 +5,7 @@ const {
   DisconnectReason,
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
-  Browsers,
+  DEFAULT_CONNECTION_CONFIG,
 } = require('@whiskeysockets/baileys');
 const fs = require('fs');
 const path = require('path');
@@ -19,7 +19,9 @@ const SESSIONS_DIR = '/tmp/snuggle-x-sessions';
 if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR, { recursive: true });
 
 const activePairs = new Map();
-const logger = P({ level: 'warn' }, P.destination({ sync: true }));
+
+// Logger — match official example (trace level for debugging)
+const logger = P({ level: 'warn' });
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -58,56 +60,102 @@ function formatPairCode(code) {
   return c;
 }
 
-// === Start socket (YOBBY MD's exact approach) ===
-async function startSocket(sessionId, phone, sessionFolder, onOpen, onClose) {
+// Simple in-memory message cache for retries (per official example)
+const msgRetryCounterCache = new Map();
+
+// === Start socket — official Baileys pattern ===
+async function startSock(opts) {
+  const { sessionId, phone, sessionFolder, onPairingCode, onLinked, onError } = opts;
+
+  const { state, saveCreds } = await useMultiFileAuthState(sessionFolder);
   const { version, isLatest } = await fetchLatestBaileysVersion();
   console.log(`[PAIR ${sessionId.slice(0,12)}] Baileys v${version.join('.')} (latest=${isLatest})`);
-  const { state, saveCreds } = await useMultiFileAuthState(sessionFolder);
 
   const sock = makeWASocket({
     version,
+    logger,
+    waWebSocketUrl: DEFAULT_CONNECTION_CONFIG.waWebSocketUrl,
     auth: {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, logger),
     },
+    msgRetryCounterCache,
+    generateHighQualityLinkPreview: true,
+    // Use Chrome on Ubuntu (realistic device fingerprint)
+    browser: ['Ubuntu', 'Chrome', '22.04.4'],
     printQRInTerminal: false,
-    logger,
-    browser: Browsers.appropriate('Chrome'),
-    defaultQueryTimeoutMs: 120000,
-    connectTimeoutMs: 120000,
-    qrTimeout: 120000,
-    keepAliveIntervalMs: 30000,
     markOnlineOnConnect: false,
     syncFullHistory: false,
-    retryRequestDelayMs: 2000,
-    linkPreview: false,
   });
 
-  sock.ev.on('creds.update', saveCreds);
+  sock.ev.process(async (events) => {
+    if (events['connection.update']) {
+      const update = events['connection.update'];
+      const { connection, lastDisconnect, qr } = update;
+      console.log(`[PAIR ${sessionId.slice(0,12)}] update:`, JSON.stringify({
+        connection,
+        statusCode: lastDisconnect?.error?.output?.statusCode,
+        hasQr: !!qr,
+      }));
 
-  sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect, qr } = update;
-    console.log(`[PAIR ${sessionId.slice(0,12)}] update:`, JSON.stringify({
-      connection,
-      statusCode: lastDisconnect?.error?.output?.statusCode,
-      hasQr: !!qr,
-    }));
+      if (connection === 'close') {
+        const statusCode = lastDisconnect?.error?.output?.statusCode;
+        const errorMsg = lastDisconnect?.error?.message || 'unknown';
+        const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+        console.log(`[PAIR ${sessionId.slice(0,12)}] closed code=${statusCode} (${errorMsg}) loggedOut=${isLoggedOut}`);
+        // Clean up
+        try {
+          sock.ev.removeAllListeners();
+        } catch {}
 
-    if (connection === 'open') {
-      onOpen(sock);
-    } else if (connection === 'close') {
-      const statusCode = lastDisconnect?.error?.output?.statusCode;
-      const errorMsg = lastDisconnect?.error?.message || 'unknown';
-      const isLoggedOut = statusCode === DisconnectReason.loggedOut;
-      console.log(`[PAIR ${sessionId.slice(0,12)}] closed code=${statusCode} (${errorMsg}) loggedOut=${isLoggedOut}`);
-      onClose(sock, statusCode, isLoggedOut, errorMsg);
+        if (isLoggedOut) {
+          // Can't reconnect — user rejected or code expired
+          onError('Connection closed. You are logged out. Try again with a fresh code.');
+        } else {
+          // Reconnect (official Baileys pattern — just restart the socket)
+          console.log(`[PAIR ${sessionId.slice(0,12)}] Reconnecting in 2s...`);
+          setTimeout(async () => {
+            try {
+              await startSock(opts);
+            } catch (e) {
+              console.error(`[PAIR ${sessionId.slice(0,12)}] Reconnect failed:`, e.message);
+              onError(e.message);
+            }
+          }, 2000);
+        }
+      }
+
+      if (qr) {
+        // === OFFICIAL PATTERN: request pairing code immediately on QR (no setTimeout, no wsReady wait) ===
+        if (!sock.authState.creds.registered && phone) {
+          try {
+            const code = await sock.requestPairingCode(phone);
+            console.log(`[PAIR] ${phone}: code ${code}`);
+            onPairingCode(formatPairCode(code));
+          } catch (e) {
+            console.error(`[PAIR ${sessionId.slice(0,12)}] requestPairingCode failed:`, e.message);
+            onError(`Failed to get pairing code: ${e.message}`);
+          }
+        }
+      }
+
+      if (connection === 'open') {
+        const ownerJid = sock.user.id;
+        const ownerNumber = ownerJid.split(':')[0].split('@')[0];
+        console.log(`[PAIR] ✅ Linked as ${ownerJid}`);
+        onLinked(sock, ownerJid, ownerNumber);
+      }
+    }
+
+    if (events['creds.update']) {
+      await saveCreds();
     }
   });
 
   return sock;
 }
 
-// === Pairing flow ===
+// === Pairing flow — official Baileys pattern ===
 app.post('/api/pair/start', async (req, res) => {
   const phone = normalizePhone(req.body.phone);
   if (!phone) {
@@ -130,23 +178,23 @@ app.post('/api/pair/start', async (req, res) => {
   activePairs.set(sessionId, pairRecord);
 
   let linkedResolved = false;
-  let socketReady = false;
-  let connectionFailed = false;
 
-  // === Start the socket — first time ===
-  let sock;
   try {
-    sock = await startSocket(
+    const sock = await startSock({
       sessionId,
       phone,
       sessionFolder,
-      // onOpen — user has linked their phone
-      async (s) => {
+      // === onPairingCode — code returned, tell the frontend ===
+      onPairingCode: (code) => {
+        pairRecord.pairingCode = code;
+        pairRecord.status = 'code_sent';
+      },
+      // === onLinked — user paired on their phone ===
+      onLinked: async (s, ownerJid, ownerNumber) => {
         if (linkedResolved) return;
         linkedResolved = true;
-        const ownerJid = s.user.id;
-        const ownerNumber = ownerJid.split(':')[0].split('@')[0];
         pairRecord.status = 'linked';
+        pairRecord.sock = s;
         console.log(`[PAIR] ✅ Linked as ${ownerJid}`);
 
         try {
@@ -165,155 +213,30 @@ app.post('/api/pair/start', async (req, res) => {
           activePairs.delete(sessionId);
         }, 3000);
       },
-      // onClose — handle close (recreate socket on transient, fail on loggedOut)
-      async (closedSock, statusCode, isLoggedOut, errorMsg) => {
-        // Clean up old listeners to prevent duplicates on reconnect
-        try {
-          closedSock.ev.removeAllListeners('messages.upsert');
-          closedSock.ev.removeAllListeners('connection.update');
-          closedSock.ev.removeAllListeners('creds.update');
-        } catch {}
-
-        if (linkedResolved) return; // already linked, ignore
-
-        if (isLoggedOut) {
-          // 401 — pairing code expired/rejected, or user explicitly logged out
-          if (!socketReady) {
-            // Failed before we even got the pairing code out
-            connectionFailed = true;
-            pairRecord.status = 'failed';
-            pairRecord.error = 'Pairing failed. Code expired or rejected. Please try again with a fresh code.';
-            activePairs.delete(sessionId);
-          }
-          // If we already sent the code and user is still entering it, this is bad — they rejected
-          pairRecord.status = 'failed';
-          pairRecord.error = 'WhatsApp rejected the pairing. Try again.';
-          activePairs.delete(sessionId);
-          return;
-        }
-
-        // Other close reasons (network blip, restart) — try to recreate the socket
-        if (!socketReady) {
-          // Still trying to get a QR — retry
-          console.log(`[PAIR ${sessionId.slice(0,12)}] Reconnecting in 3s...`);
-          setTimeout(async () => {
-            try {
-              const newSock = await startSocket(sessionId, phone, sessionFolder,
-                async (s) => {
-                  if (linkedResolved) return;
-                  linkedResolved = true;
-                  const ownerJid = s.user.id;
-                  const ownerNumber = ownerJid.split(':')[0].split('@')[0];
-                  pairRecord.status = 'linked';
-                  console.log(`[PAIR] ✅ Linked as ${ownerJid} (reconnect)`);
-                  try {
-                    const sessionB64 = encodeSession(sessionFolder);
-                    const shortSession = 'yobbyx:~' + sessionB64;
-                    await s.sendMessage(ownerJid, {
-                      text: `*SNUGGLE X SESSION ID* 🔑\n\n${shortSession}\n\n_Copy this session ID and send it to the admin to deploy your bot on the Snuggle X platform._`,
-                    });
-                    await s.sendMessage(ownerJid, {
-                      text: '*`SUCCESSFUL & VERIFIED ✅`*\n> snuggle x bot\n`contact developer for deploying`\n> 0795314221 or 0181163563',
-                    });
-                  } catch (e) { console.error('[PAIR] sendMessage failed:', e.message); }
-                  setTimeout(() => {
-                    try { s.logout(); } catch (e) {}
-                    activePairs.delete(sessionId);
-                  }, 3000);
-                },
-                (cs, sc, lo, em) => {
-                  // nested close — give up
-                  if (!linkedResolved) {
-                    pairRecord.status = 'failed';
-                    pairRecord.error = em || 'Connection lost during pairing';
-                    activePairs.delete(sessionId);
-                  }
-                });
-              pairRecord.sock = newSock;
-            } catch (e) {
-              console.error(`[PAIR ${sessionId.slice(0,12)}] Reconnect failed:`, e.message);
-            }
-          }, 3000);
-        }
-      }
-    );
+      // === onError — pairing failed ===
+      onError: (msg) => {
+        if (linkedResolved) return;
+        pairRecord.status = 'failed';
+        pairRecord.error = msg;
+        activePairs.delete(sessionId);
+      },
+    });
     pairRecord.sock = sock;
+
+    // Wait briefly for the QR event (so we can return the code in the response if it arrives fast)
+    // The frontend will poll /api/pair/status/:sessionId for the code if it doesn't arrive in this window
+    await new Promise(r => setTimeout(r, 6000));
+
+    res.json({
+      sessionId,
+      pairingCode: pairRecord.pairingCode || null,
+      message: pairRecord.pairingCode ? 'Code sent' : 'Pairing in progress, poll for code',
+    });
   } catch (e) {
-    console.error('Socket start error:', e);
+    console.error('Pair start error:', e);
     activePairs.delete(sessionId);
-    return res.status(500).json({ error: e.message });
+    res.status(500).json({ error: e.message });
   }
-
-  // === Wait for QR event (means socket is ready for pairing code) ===
-  let qrReceived = false;
-  const waitPromise = new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      if (!qrReceived) {
-        reject(new Error('Timeout: WhatsApp never sent a QR. Check your connection.'));
-      }
-    }, 45000);
-
-    const handler = (update) => {
-      if (update.qr && !qrReceived) {
-        qrReceived = true;
-        clearTimeout(timeout);
-        sock.ev.off('connection.update', handler);
-        resolve();
-      } else if (update.connection === 'close' && !qrReceived) {
-        clearTimeout(timeout);
-        sock.ev.off('connection.update', handler);
-        const sc = update.lastDisconnect?.error?.output?.statusCode;
-        reject(new Error(`Connection closed (status ${sc}). WhatsApp rejected the connection.`));
-      } else if (update.connection === 'open' && !qrReceived) {
-        // Already linked somehow (cached creds?) — resolve early
-        qrReceived = true;
-        clearTimeout(timeout);
-        sock.ev.off('connection.update', handler);
-        resolve();
-      }
-    };
-    sock.ev.on('connection.update', handler);
-  });
-
-  try {
-    await waitPromise;
-    socketReady = true;
-    console.log(`[PAIR ${sessionId.slice(0,12)}] QR received — requesting pairing code...`);
-  } catch (e) {
-    try { await sock.logout(); } catch {}
-    activePairs.delete(sessionId);
-    return res.status(500).json({ error: e.message });
-  }
-
-  // Wait for wsReady (extra safety)
-  let waited = 0;
-  while (!sock.wsReady && waited < 20) {
-    await new Promise(r => setTimeout(r, 500));
-    waited++;
-  }
-  console.log(`[PAIR ${sessionId.slice(0,12)}] wsReady=${sock.wsReady} after ${waited * 500}ms`);
-
-  // === Request pairing code ===
-  let code;
-  try {
-    code = await sock.requestPairingCode(phone);
-  } catch (e) {
-    try { await sock.logout(); } catch {}
-    activePairs.delete(sessionId);
-    return res.status(500).json({ error: `Failed to get pairing code: ${e.message}` });
-  }
-
-  if (!code || code.length < 4) {
-    try { await sock.logout(); } catch {}
-    activePairs.delete(sessionId);
-    return res.status(500).json({ error: 'WhatsApp returned invalid pairing code. Try again.' });
-  }
-
-  pairRecord.pairingCode = formatPairCode(code);
-  pairRecord.status = 'code_sent';
-  console.log(`[PAIR] ${phone}: code ${pairRecord.pairingCode}`);
-
-  res.json({ sessionId, pairingCode: pairRecord.pairingCode, message: 'Pairing code sent' });
 });
 
 app.get('/api/pair/status/:sessionId', (req, res) => {
