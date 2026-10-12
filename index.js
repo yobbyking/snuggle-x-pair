@@ -276,6 +276,62 @@ app.get('/api/pair/status/:sessionId', (req, res) => {
 });
 
 app.get('/api/health', (req, res) => res.json({ ok: true, service: 'snuggle-x-pair' }));
+
+// === /scan — QR scan alternative (placeholder page) ===
+app.get('/scan', (req, res) => {
+  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SNUGGLE X · QR Scan</title><style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Outfit', -apple-system, system-ui, sans-serif; background: #04040a; color: #fff; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; text-align: center; }
+.card { background: linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01)); border: 1px solid rgba(255,255,255,0.06); border-radius: 24px; padding: 40px 30px; max-width: 420px; backdrop-filter: blur(30px); }
+.logo { font-size: 48px; margin-bottom: 16px; }
+h1 { font-size: 22px; font-weight: 700; color: #00FFB3; margin-bottom: 8px; }
+p { color: #C8C8E0; font-size: 14px; line-height: 1.6; margin-bottom: 20px; }
+a { display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #00B380, #00FFB3); color: #04040a; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 13px; letter-spacing: 1px; text-transform: uppercase; }
+a:hover { transform: translateY(-2px); }
+.coming { color: #FFB800; font-size: 12px; margin-top: 20px; font-family: monospace; letter-spacing: 1px; }
+</style></head><body><div class="card"><div class="logo">📷</div><h1>QR Scan Pairing</h1><p>QR code pairing is coming soon. For now, please use the phone number pairing method on the main portal.</p><a href="/">← Back to Pairing Portal</a><div class="coming">Coming Soon · Use Phone Number Method</div></div></body></html>`);
+});
+
+// === /download — download instructions / latest info ===
+app.get('/download', (req, res) => {
+  res.setHeader('Content-Type', 'text/plain');
+  res.setHeader('Content-Disposition', 'attachment; filename="snuggle-x-info.txt"');
+  res.send(`SNUGGLE X — WhatsApp Bot Platform
+================================
+
+Created by: Yobby King
+Instagram: @yobby_mking
+Contact: 0795314221 / 0181163563
+
+HOW TO DEPLOY YOUR BOT:
+1. Visit the pairing portal
+2. Enter your WhatsApp number (with country code)
+3. Click "Generate Pair Code"
+4. Open WhatsApp → Settings → Linked Devices → Link a Device → Link with phone number
+5. Enter the pairing code shown on the portal
+6. You'll receive your Session ID in WhatsApp (3 messages)
+7. Forward the Session ID to the admin to deploy your bot
+
+SUPPORTED:
+- Pairing via phone number
+- Session ID-based bot deployment
+- Multi-user (each user gets their own bot)
+- Private mode (only owner can command)
+
+BOT COMMANDS:
+.menu — show the main menu
+.all — show full command list
+.alive — bot status
+.owner — owner info
+.ping — latency check
+.sticker — image to sticker
+
+Made with ❤️ by Yobby King
+> Instagram @yobby_mking
+> Contact dev: 0795314221 or 0181163563
+`);
+});
+
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 app.listen(PORT, '0.0.0.0', () => console.log(`[Snuggle X Pair] running on port ${PORT}`));
