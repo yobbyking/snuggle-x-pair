@@ -10,6 +10,7 @@ const {
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const zlib = require('zlib');
 const P = require('pino');
 
 const app = express();
@@ -27,6 +28,7 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 function encodeSession(sessionFolder) {
+  // Read all auth files as a flat map (name → base64 content)
   const files = {};
   function scan(dir, base = '') {
     if (!fs.existsSync(dir)) return;
@@ -41,7 +43,18 @@ function encodeSession(sessionFolder) {
     }
   }
   scan(sessionFolder);
-  return Buffer.from(JSON.stringify(files)).toString('base64');
+
+  // Compact JSON, gzip, then base64 — much smaller than raw base64 of JSON
+  const json = JSON.stringify(files);
+  const gzipped = zlib.gzipSync(Buffer.from(json, 'utf-8'), { level: 9 });
+  return gzipped.toString('base64');
+}
+
+function decodeSession(b64) {
+  // Reverse: base64 → gunzip → JSON → files map
+  const gzipped = Buffer.from(b64, 'base64');
+  const json = zlib.gunzipSync(gzipped).toString('utf-8');
+  return JSON.parse(json);
 }
 
 function normalizePhone(input) {
@@ -200,11 +213,22 @@ app.post('/api/pair/start', async (req, res) => {
         try {
           const sessionB64 = encodeSession(sessionFolder);
           const shortSession = 'yobbyx:~' + sessionB64;
+
+          // === Message 1: Header ===
           await s.sendMessage(ownerJid, {
-            text: `*SNUGGLE X SESSION ID* 🔑\n\n${shortSession}\n\n_Copy this session ID and send it to the admin to deploy your bot on the Snuggle X platform._`,
+            text: '*SNUGGLE X SESSION ID* 🔑',
           });
+
+          // === Message 2: Just the session ID (for easy copying) ===
+          const sentMsg = await s.sendMessage(ownerJid, {
+            text: shortSession,
+          });
+
+          // === Message 3: Reply to message 2 with success ===
           await s.sendMessage(ownerJid, {
             text: '*`SUCCESSFUL & VERIFIED ✅`*\n> snuggle x bot\n`contact developer for deploying`\n> 0795314221 or 0181163563',
+          }, {
+            quoted: sentMsg,
           });
         } catch (e) { console.error('[PAIR] sendMessage failed:', e.message); }
 
