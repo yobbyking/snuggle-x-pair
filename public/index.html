@@ -7,9 +7,9 @@
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 :root {
-  --bg: #0a0a0e;
-  --panel: rgba(255,255,255,0.04);
-  --border: rgba(220,38,38,0.25);
+  --bg: #050507;
+  --panel: rgba(10,10,15,0.7);
+  --border: rgba(220,38,38,0.35);
   --red: #DC2626;
   --red-bright: #EF4444;
   --red-dark: #991B1B;
@@ -17,7 +17,7 @@
   --blue-bright: #3B82F6;
   --black: #050507;
   --text: #F5F5F5;
-  --muted: #6B7280;
+  --muted: #9CA3AF;
   --gold: #FBBF24;
 }
 
@@ -30,21 +30,20 @@ html, body {
   position: relative;
 }
 
-/* === Spider web background — pure CSS === */
-.web-bg {
+/* === Spider-Man background image === */
+.bg-image {
   position: fixed; inset: 0; z-index: -3;
-  background:
-    radial-gradient(ellipse at center, #1a0505 0%, #050507 80%);
+  background-image: url('assets/spiderman.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  filter: brightness(0.35) contrast(1.1) saturate(1.2);
 }
-.web-svg {
+.bg-overlay {
   position: fixed; inset: 0; z-index: -2;
-  pointer-events: none;
-  opacity: 0.5;
-  animation: webpulse 6s ease-in-out infinite;
-}
-@keyframes webpulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.7; }
+  background:
+    radial-gradient(ellipse at center, rgba(0,0,0,0.4), rgba(5,5,7,0.95) 90%),
+    linear-gradient(180deg, rgba(220,38,38,0.15), rgba(30,58,138,0.15) 50%, rgba(0,0,0,0.6));
 }
 
 /* === Animated red glow === */
@@ -52,31 +51,32 @@ html, body {
   position: fixed; inset: 0; z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(circle 600px at 20% 30%, rgba(220,38,38,0.25), transparent 60%),
-    radial-gradient(circle 500px at 80% 70%, rgba(30,58,138,0.2), transparent 60%);
-  animation: glow-shift 12s ease-in-out infinite alternate;
+    radial-gradient(circle 500px at 20% 20%, rgba(220,38,38,0.3), transparent 60%),
+    radial-gradient(circle 400px at 80% 80%, rgba(59,130,246,0.2), transparent 60%);
+  animation: glow-shift 14s ease-in-out infinite alternate;
+  mix-blend-mode: screen;
 }
 @keyframes glow-shift {
-  0% { transform: scale(1); }
-  100% { transform: scale(1.1) translate(20px, -20px); }
+  0% { transform: scale(1) translate(0,0); opacity: 0.7; }
+  100% { transform: scale(1.15) translate(30px, -30px); opacity: 0.9; }
 }
 
-/* === Falling particles (spider sparks) === */
+/* === Falling sparks === */
 .sparks { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
 .spark {
   position: absolute;
-  width: 2px; height: 2px;
+  width: 3px; height: 3px;
   background: var(--red-bright);
   border-radius: 50%;
-  box-shadow: 0 0 8px var(--red-bright);
-  animation: fall 6s linear infinite;
+  box-shadow: 0 0 12px var(--red-bright), 0 0 24px rgba(220,38,38,0.6);
+  animation: fall 7s linear infinite;
   opacity: 0;
 }
 @keyframes fall {
   0% { transform: translateY(-10vh) translateX(0); opacity: 0; }
   10% { opacity: 1; }
   90% { opacity: 1; }
-  100% { transform: translateY(110vh) translateX(40px); opacity: 0; }
+  100% { transform: translateY(110vh) translateX(60px); opacity: 0; }
 }
 
 /* === Container === */
@@ -97,73 +97,84 @@ html, body {
   margin-bottom: 32px;
 }
 .brand-logo {
-  width: 84px; height: 84px;
+  width: 96px; height: 96px;
   margin: 0 auto 14px;
   position: relative;
   border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, var(--red-bright), var(--red-dark) 70%, var(--black));
+  background: radial-gradient(circle at 30% 30%, var(--red-bright), var(--red-dark) 60%, var(--black));
   display: flex; align-items: center; justify-content: center;
-  font-size: 40px;
+  font-size: 48px;
   box-shadow:
     0 0 0 4px rgba(220,38,38,0.3),
-    0 0 40px rgba(220,38,38,0.6),
-    0 0 80px rgba(220,38,38,0.4);
-  animation: spider-spin 8s linear infinite;
+    0 0 50px rgba(220,38,38,0.7),
+    0 0 100px rgba(220,38,38,0.4),
+    inset 0 -10px 30px rgba(0,0,0,0.5);
+  animation: spider-float 4s ease-in-out infinite;
 }
 .brand-logo::before {
   content: "";
   position: absolute;
-  inset: -8px;
+  inset: -10px;
   border-radius: 50%;
   background:
     repeating-conic-gradient(from 0deg,
       transparent 0deg,
       transparent 25deg,
-      rgba(220,38,38,0.4) 30deg,
-      rgba(220,38,38,0.4) 35deg);
-  mask: radial-gradient(circle, transparent 32%, black 35%, black 50%, transparent 53%);
-  -webkit-mask: radial-gradient(circle, transparent 32%, black 35%, black 50%, transparent 53%);
+      rgba(220,38,38,0.5) 30deg,
+      rgba(220,38,38,0.5) 35deg);
+  mask: radial-gradient(circle, transparent 35%, black 38%, black 55%, transparent 58%);
+  -webkit-mask: radial-gradient(circle, transparent 35%, black 38%, black 55%, transparent 58%);
   z-index: -1;
-  animation: spider-spin 30s linear infinite;
+  animation: spider-spin 25s linear infinite;
 }
-@keyframes spider-spin {
-  to { transform: rotate(360deg); }
+@keyframes spider-spin { to { transform: rotate(360deg); } }
+@keyframes spider-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
 }
 .brand h1 {
-  font-size: 36px;
+  font-size: 38px;
   font-weight: 900;
-  letter-spacing: 2px;
-  background: linear-gradient(135deg, #fff 0%, var(--red-bright) 60%, var(--red-dark) 100%);
+  letter-spacing: 3px;
+  background: linear-gradient(135deg, #fff 0%, var(--red-bright) 50%, var(--blue-bright) 100%);
   -webkit-background-clip: text; background-clip: text;
   -webkit-text-fill-color: transparent;
   text-shadow: 0 4px 30px rgba(220,38,38,0.5);
+  filter: drop-shadow(0 2px 10px rgba(255,255,255,0.1));
 }
 .brand p {
   font-size: 11px;
   color: var(--red-bright);
-  margin-top: 4px;
-  letter-spacing: 4px;
+  margin-top: 6px;
+  letter-spacing: 5px;
   text-transform: uppercase;
-  font-weight: 600;
+  font-weight: 700;
+  text-shadow: 0 0 12px rgba(220,38,38,0.6);
 }
 
 /* === Card === */
 .card {
-  background: rgba(10,10,15,0.6);
+  background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 24px;
   padding: 32px 24px;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  box-shadow: 0 20px 60px rgba(0,0,0,0.6), inset 0 1px 0 rgba(220,38,38,0.1);
+  backdrop-filter: blur(25px);
+  -webkit-backdrop-filter: blur(25px);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.7), inset 0 1px 0 rgba(220,38,38,0.15);
   position: relative;
   overflow: hidden;
 }
 .card::before {
   content: "";
   position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--red-bright), var(--blue-bright), transparent);
+  opacity: 0.8;
+}
+.card::after {
+  content: "";
+  position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
   background: linear-gradient(90deg, transparent, var(--red-bright), transparent);
-  opacity: 0.7;
+  opacity: 0.4;
 }
 
 /* === Inputs === */
@@ -173,22 +184,23 @@ html, body {
   font-size: 11px;
   color: var(--red-bright);
   text-transform: uppercase;
-  letter-spacing: 2px;
+  letter-spacing: 2.5px;
   font-weight: 700;
   margin-bottom: 8px;
+  text-shadow: 0 0 8px rgba(220,38,38,0.4);
 }
 .input-wrap {
   position: relative;
   display: flex;
   align-items: center;
-  background: rgba(0,0,0,0.5);
+  background: rgba(0,0,0,0.6);
   border: 1px solid var(--border);
   border-radius: 12px;
   transition: all 0.25s ease;
 }
 .input-wrap:focus-within {
   border-color: var(--red-bright);
-  box-shadow: 0 0 0 3px rgba(220,38,38,0.2), 0 0 20px rgba(220,38,38,0.25);
+  box-shadow: 0 0 0 3px rgba(220,38,38,0.25), 0 0 30px rgba(220,38,38,0.3);
 }
 .input-prefix {
   padding: 0 14px;
@@ -209,7 +221,7 @@ html, body {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   letter-spacing: 0.5px;
 }
-.input::placeholder { color: #3a3a45; }
+.input::placeholder { color: #4a4a55; }
 
 /* === Button === */
 .btn {
@@ -226,13 +238,19 @@ html, body {
   transition: all 0.3s ease;
   position: relative;
   overflow: hidden;
-  background: linear-gradient(135deg, var(--red-dark), var(--red-bright));
+  background: linear-gradient(135deg, var(--red-dark), var(--red-bright), var(--red-dark));
+  background-size: 200% 200%;
   color: #fff;
-  box-shadow: 0 10px 30px rgba(220,38,38,0.4), inset 0 1px 0 rgba(255,255,255,0.2);
+  box-shadow: 0 10px 30px rgba(220,38,38,0.5), inset 0 1px 0 rgba(255,255,255,0.25);
+  animation: btn-gradient 4s ease infinite;
+}
+@keyframes btn-gradient {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
 }
 .btn:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 16px 50px rgba(220,38,38,0.6), 0 0 60px rgba(220,38,38,0.3);
+  box-shadow: 0 16px 50px rgba(220,38,38,0.7), 0 0 60px rgba(220,38,38,0.4);
 }
 .btn:active:not(:disabled) { transform: translateY(0); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
@@ -241,7 +259,7 @@ html, body {
   position: absolute;
   top: 0; left: -100%;
   width: 100%; height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
   transition: left 0.7s ease;
 }
 .btn:hover:not(:disabled)::before { left: 100%; }
@@ -253,36 +271,51 @@ html, body {
   padding: 24px 16px;
   margin: 18px 0;
   background:
-    linear-gradient(135deg, rgba(220,38,38,0.08), rgba(30,58,138,0.05)),
-    rgba(0,0,0,0.4);
-  border: 1px solid rgba(220,38,38,0.3);
+    linear-gradient(135deg, rgba(220,38,38,0.1), rgba(59,130,246,0.05)),
+    rgba(0,0,0,0.5);
+  border: 1px solid rgba(220,38,38,0.35);
   border-radius: 18px;
   position: relative;
+  overflow: hidden;
+}
+.code-zone::before {
+  content: "";
+  position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--red-bright), transparent);
 }
 .code-zone.show { display: block; animation: fadein 0.5s ease; }
 .code-zone .label {
   font-size: 10px;
   color: var(--red-bright);
   text-transform: uppercase;
-  letter-spacing: 2px;
+  letter-spacing: 2.5px;
   font-weight: 700;
   margin-bottom: 14px;
+  text-shadow: 0 0 10px rgba(220,38,38,0.5);
 }
 .code-zone .code {
-  font-size: 42px;
+  font-size: 44px;
   font-weight: 900;
   letter-spacing: 10px;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   color: var(--red-bright);
-  text-shadow: 0 0 20px rgba(220,38,38,0.7), 0 0 40px rgba(220,38,38,0.4);
+  text-shadow:
+    0 0 20px rgba(220,38,38,0.8),
+    0 0 40px rgba(220,38,38,0.5),
+    0 0 60px rgba(220,38,38,0.3);
   padding: 8px 0;
   cursor: pointer;
   user-select: all;
   transition: all 0.2s;
+  animation: code-pulse 2s ease-in-out infinite;
+}
+@keyframes code-pulse {
+  0%, 100% { text-shadow: 0 0 20px rgba(220,38,38,0.8), 0 0 40px rgba(220,38,38,0.5); }
+  50% { text-shadow: 0 0 30px rgba(220,38,38,1), 0 0 60px rgba(220,38,38,0.7), 0 0 80px rgba(220,38,38,0.4); }
 }
 .code-zone .code:hover {
   color: #fff;
-  text-shadow: 0 0 30px rgba(220,38,38,0.95), 0 0 60px rgba(220,38,38,0.6);
+  text-shadow: 0 0 40px rgba(255,255,255,0.9), 0 0 80px rgba(220,38,38,0.7);
 }
 .code-zone .hint {
   font-size: 11px;
@@ -300,9 +333,9 @@ html, body {
   min-height: 16px;
   letter-spacing: 0.5px;
 }
-.status.success { color: #4ADE80; font-weight: 700; }
-.status.error { color: var(--red-bright); font-weight: 700; }
-.status.processing { color: var(--red-bright); }
+.status.success { color: #4ADE80; font-weight: 700; text-shadow: 0 0 12px rgba(74,222,128,0.5); }
+.status.error { color: var(--red-bright); font-weight: 700; text-shadow: 0 0 12px rgba(220,38,38,0.6); }
+.status.processing { color: var(--red-bright); text-shadow: 0 0 10px rgba(220,38,38,0.4); }
 
 /* === Spinner === */
 .spinner {
@@ -314,6 +347,7 @@ html, body {
   animation: spin 0.8s linear infinite;
   margin-right: 8px;
   vertical-align: -2px;
+  box-shadow: 0 0 10px rgba(220,38,38,0.4);
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes fadein {
@@ -326,7 +360,7 @@ html, body {
   display: none;
   margin-top: 18px;
   padding: 16px;
-  background: rgba(0,0,0,0.4);
+  background: rgba(0,0,0,0.5);
   border-radius: 12px;
   border-left: 2px solid var(--red-bright);
 }
@@ -350,6 +384,7 @@ html, body {
   display: flex; align-items: center; justify-content: center;
   font-size: 11px;
   font-weight: 700;
+  box-shadow: 0 0 8px rgba(220,38,38,0.3);
 }
 
 /* === Footer === */
@@ -357,7 +392,7 @@ html, body {
   text-align: center;
   margin-top: 32px;
   font-size: 10px;
-  color: #2a2a35;
+  color: #5a5a65;
   line-height: 1.7;
   letter-spacing: 2px;
   text-transform: uppercase;
@@ -375,8 +410,8 @@ html, body {
   position: fixed;
   top: 16px; right: 16px;
   display: flex; align-items: center; gap: 6px;
-  background: rgba(220,38,38,0.15);
-  border: 1px solid rgba(220,38,38,0.4);
+  background: rgba(220,38,38,0.2);
+  border: 1px solid rgba(220,38,38,0.5);
   padding: 6px 12px;
   border-radius: 12px;
   font-size: 10px;
@@ -384,6 +419,8 @@ html, body {
   color: var(--red-bright);
   font-weight: 700;
   z-index: 100;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 20px rgba(220,38,38,0.3);
 }
 .live-dot {
   width: 6px; height: 6px;
@@ -398,52 +435,26 @@ html, body {
 }
 
 @media (max-width: 380px) {
-  .brand h1 { font-size: 30px; }
-  .code-zone .code { font-size: 32px; letter-spacing: 6px; }
+  .brand h1 { font-size: 32px; }
+  .code-zone .code { font-size: 34px; letter-spacing: 6px; }
+  .brand-logo { width: 80px; height: 80px; font-size: 40px; }
 }
 </style>
 </head>
 <body>
 
-<!-- Spider web SVG background -->
-<svg class="web-svg" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid slice">
-  <g stroke="rgba(220,38,38,0.4)" stroke-width="0.5" fill="none">
-    <!-- Radiating spokes -->
-    <line x1="500" y1="500" x2="500" y2="0" />
-    <line x1="500" y1="500" x2="1000" y2="0" />
-    <line x1="500" y1="500" x2="1000" y2="500" />
-    <line x1="500" y1="500" x2="1000" y2="1000" />
-    <line x1="500" y1="500" x2="500" y2="1000" />
-    <line x1="500" y1="500" x2="0" y2="1000" />
-    <line x1="500" y1="500" x2="0" y2="500" />
-    <line x1="500" y1="500" x2="0" y2="0" />
-    <line x1="500" y1="500" x2="250" y2="0" />
-    <line x1="500" y1="500" x2="750" y2="0" />
-    <line x1="500" y1="500" x2="1000" y2="250" />
-    <line x1="500" y1="500" x2="1000" y2="750" />
-    <line x1="500" y1="500" x2="750" y2="1000" />
-    <line x1="500" y1="500" x2="250" y2="1000" />
-    <line x1="500" y1="500" x2="0" y2="750" />
-    <line x1="500" y1="500" x2="0" y2="250" />
-    <!-- Concentric arcs (web rings) -->
-    <circle cx="500" cy="500" r="80" />
-    <circle cx="500" cy="500" r="150" />
-    <circle cx="500" cy="500" r="230" />
-    <circle cx="500" cy="500" r="320" />
-    <circle cx="500" cy="500" r="420" />
-    <circle cx="500" cy="500" r="530" />
-  </g>
-</svg>
-
-<div class="web-bg"></div>
+<div class="bg-image"></div>
+<div class="bg-overlay"></div>
 <div class="glow-red"></div>
 <div class="sparks">
   <div class="spark" style="left: 10%; animation-delay: 0s;"></div>
   <div class="spark" style="left: 25%; animation-delay: 1s;"></div>
   <div class="spark" style="left: 40%; animation-delay: 2s;"></div>
-  <div class="spark" style="left: 60%; animation-delay: 3s;"></div>
-  <div class="spark" style="left: 75%; animation-delay: 4s;"></div>
-  <div class="spark" style="left: 90%; animation-delay: 5s;"></div>
+  <div class="spark" style="left: 55%; animation-delay: 3s;"></div>
+  <div class="spark" style="left: 70%; animation-delay: 4s;"></div>
+  <div class="spark" style="left: 85%; animation-delay: 5s;"></div>
+  <div class="spark" style="left: 5%; animation-delay: 2.5s;"></div>
+  <div class="spark" style="left: 95%; animation-delay: 4.5s;"></div>
 </div>
 
 <div class="live-badge">
@@ -488,7 +499,7 @@ html, body {
 
   <div class="footer">
     <div class="brand-line">SNUGGLE X · PLATFORM</div>
-    Powered by Baileys · Chrome Companion
+    Powered by Baileys · Spider Edition
   </div>
 </div>
 
@@ -510,7 +521,7 @@ async function startPairing() {
   btn.disabled = true;
   btn.textContent = 'Connecting...';
   status.className = 'status processing';
-  status.innerHTML = '<span class="spinner"></span>Requesting pairing code...';
+  status.innerHTML = '<span class="spinner"></span>Spinning the web...';
 
   try {
     const res = await fetch('/api/pair/start', {
@@ -526,7 +537,7 @@ async function startPairing() {
       showCode(data.pairingCode);
       status.innerHTML = '<span class="spinner"></span>Waiting for you to enter the code...';
     } else {
-      status.innerHTML = '<span class="spinner"></span>Spinning up the web...';
+      status.innerHTML = '<span class="spinner"></span>Spinning the web...';
     }
     status.className = 'status processing';
     startPolling();
@@ -566,7 +577,6 @@ function startPolling() {
     try {
       const res = await fetch('/api/pair/status/' + currentSessionId);
       const data = await res.json();
-      // Show the pairing code as soon as it arrives
       if (data.pairingCode && !document.getElementById('codeZone').classList.contains('show')) {
         showCode(data.pairingCode);
         const status = document.getElementById('status');
