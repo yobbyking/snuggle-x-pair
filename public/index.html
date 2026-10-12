@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Snuggle X · Pairing</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+:root {
+  --bg: #0a0a14;
+  --card: rgba(255,255,255,0.04);
+  --border: rgba(255,255,255,0.08);
+  --pink: #FF5C8A;
+  --purple: #C44FE8;
+  --gold: #FFB938;
+  --text: #E8E8F0;
+  --muted: #8A8A9A;
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+}
+body::before {
+  content: "";
+  position: fixed; inset: 0;
+  background:
+    radial-gradient(ellipse 600px 400px at 20% 10%, rgba(255,92,138,0.18), transparent 60%),
+    radial-gradient(ellipse 500px 500px at 80% 30%, rgba(196,79,232,0.18), transparent 60%),
+    radial-gradient(ellipse 400px 400px at 50% 90%, rgba(255,185,56,0.10), transparent 60%);
+  z-index: -1;
+  animation: shift 16s ease-in-out infinite alternate;
+}
+@keyframes shift {
+  0% { transform: translate(0, 0); }
+  100% { transform: translate(-30px, -20px); }
+}
+.aurora {
+  position: fixed; inset: 0; z-index: -1;
+  overflow: hidden; pointer-events: none;
+}
+.aurora span {
+  position: absolute;
+  width: 320px; height: 320px;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.35;
+  animation: float 18s ease-in-out infinite;
+}
+.aurora span:nth-child(1) { background: #FF5C8A; top: 10%; left: 5%; }
+.aurora span:nth-child(2) { background: #C44FE8; top: 60%; left: 70%; animation-delay: -6s; }
+.aurora span:nth-child(3) { background: #FFB938; top: 30%; left: 80%; animation-delay: -12s; }
+@keyframes float {
+  0%, 100% { transform: translate(0,0) scale(1); }
+  50% { transform: translate(40px, -40px) scale(1.1); }
+}
+.container {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 32px 20px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.brand {
+  text-align: center;
+  margin-bottom: 28px;
+}
+.brand .logo {
+  width: 72px; height: 72px;
+  margin: 0 auto 16px;
+  background: linear-gradient(135deg, var(--pink), var(--purple));
+  border-radius: 22px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 36px;
+  box-shadow: 0 16px 40px rgba(255,92,138,0.4);
+  position: relative;
+}
+.brand .logo::after {
+  content: "";
+  position: absolute; inset: -2px;
+  border-radius: 24px;
+  background: linear-gradient(135deg, var(--pink), var(--purple));
+  filter: blur(20px); opacity: 0.5; z-index: -1;
+}
+.brand h1 {
+  font-size: 28px; font-weight: 700;
+  background: linear-gradient(135deg, #fff, #FFB9E1);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: -0.5px;
+}
+.brand p {
+  font-size: 13px; color: var(--muted);
+  margin-top: 4px;
+  letter-spacing: 0.4px;
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  padding: 28px 22px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+.qr-zone {
+  background: #fff;
+  border-radius: 20px;
+  width: 240px; height: 240px;
+  margin: 0 auto 18px;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 8px 30px rgba(255,92,138,0.25);
+}
+.qr-zone img {
+  width: 220px; height: 220px;
+  display: block;
+}
+.qr-zone .loading {
+  color: #999;
+  font-size: 13px;
+}
+.qr-zone .placeholder {
+  color: #ccc;
+  font-size: 60px;
+}
+.instructions {
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin-bottom: 18px;
+}
+.instructions ol {
+  text-align: left;
+  display: inline-block;
+  margin: 8px 0;
+  padding-left: 0;
+  list-style: none;
+}
+.instructions ol li {
+  margin: 6px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.instructions ol li span {
+  color: var(--pink);
+  font-weight: 700;
+  margin-right: 6px;
+}
+.btn {
+  display: block;
+  width: 100%;
+  padding: 16px;
+  border: none;
+  border-radius: 18px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.3px;
+  transition: all 0.25s ease;
+  background: linear-gradient(135deg, var(--pink), var(--purple));
+  color: #fff;
+  box-shadow: 0 12px 30px rgba(255,92,138,0.35);
+}
+.btn:hover { transform: translateY(-2px); box-shadow: 0 16px 40px rgba(255,92,138,0.5); }
+.btn:active { transform: translateY(0); }
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+.btn.secondary {
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  box-shadow: none;
+  margin-top: 10px;
+}
+.status {
+  text-align: center;
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--muted);
+  min-height: 18px;
+}
+.status.success { color: #4ADE80; font-weight: 600; }
+.status.error { color: #F87171; font-weight: 600; }
+.pairing-code-row {
+  display: none;
+  background: rgba(255,185,56,0.1);
+  border: 1px solid rgba(255,185,56,0.3);
+  border-radius: 14px;
+  padding: 12px;
+  margin: 14px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--gold);
+}
+.pairing-code-row strong {
+  display: block;
+  font-size: 22px;
+  letter-spacing: 4px;
+  margin-top: 4px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.footer {
+  text-align: center;
+  font-size: 11px;
+  color: #555;
+  margin-top: 28px;
+  line-height: 1.7;
+}
+.footer a {
+  color: var(--pink);
+  text-decoration: none;
+}
+.spinner {
+  width: 28px; height: 28px;
+  border: 3px solid rgba(255,255,255,0.1);
+  border-top-color: var(--pink);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 8px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (max-width: 380px) {
+  .qr-zone { width: 220px; height: 220px; }
+  .qr-zone img { width: 200px; height: 200px; }
+}
+</style>
+</head>
+<body>
+<div class="aurora"><span></span><span></span><span></span></div>
+
+<div class="container">
+  <div class="brand">
+    <div class="logo">💕</div>
+    <h1>Snuggle X</h1>
+    <p>Link your WhatsApp · Get your session ID</p>
+  </div>
+
+  <div class="card">
+    <div class="qr-zone" id="qrZone">
+      <div class="placeholder">📱</div>
+    </div>
+
+    <div class="pairing-code-row" id="pairingCodeRow">
+      Or use this pairing code:<br>
+      <strong id="pairingCode">—</strong>
+    </div>
+
+    <div class="instructions">
+      <ol>
+        <li><span>1.</span>Open WhatsApp on your phone</li>
+        <li><span>2.</span>Tap Menu → Linked Devices</li>
+        <li><span>3.</span>Tap "Link a device"</li>
+        <li><span>4.</span>Scan the QR code above</li>
+      </ol>
+    </div>
+
+    <button class="btn" id="startBtn" onclick="startPairing()">Start Pairing</button>
+    <button class="btn secondary" id="copyCodeBtn" style="display:none" onclick="copySessionId()">Copy Session ID</button>
+
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="footer">
+    Snuggle X · Built with ❤️<br>
+    For support: <a href="tel:0795314221">0795314221</a> or <a href="tel:0181163563">0181163563</a>
+  </div>
+</div>
+
+<script>
+let currentSessionId = null;
+let pollTimer = null;
+let linkedNumber = null;
+
+async function startPairing() {
+  const btn = document.getElementById('startBtn');
+  const status = document.getElementById('status');
+  const qrZone = document.getElementById('qrZone');
+
+  btn.disabled = true;
+  btn.textContent = 'Starting...';
+  status.className = 'status';
+  status.innerHTML = '<div class="spinner"></div>Connecting to Snuggle X...';
+
+  try {
+    const res = await fetch('/api/pair/start', { method: 'POST' });
+    const data = await res.json();
+    if (!data.sessionId) throw new Error('No session ID returned');
+    currentSessionId = data.sessionId;
+
+    status.textContent = 'Scan the QR code with WhatsApp';
+    status.className = 'status';
+
+    if (data.qr) {
+      showQR(data.qr);
+    }
+    startPolling();
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+    status.className = 'status error';
+    btn.disabled = false;
+    btn.textContent = 'Try Again';
+  }
+}
+
+function showQR(dataUrl) {
+  const qrZone = document.getElementById('qrZone');
+  qrZone.innerHTML = '<img src="' + dataUrl + '" alt="QR code">';
+}
+
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    if (!currentSessionId) return;
+    try {
+      const res = await fetch('/api/pair/qr/' + currentSessionId);
+      const data = await res.json();
+      if (data.qr) showQR(data.qr);
+      if (data.pairingCode) {
+        document.getElementById('pairingCodeRow').style.display = 'block';
+        document.getElementById('pairingCode').textContent = data.pairingCode;
+      }
+      if (data.linked) {
+        clearInterval(pollTimer);
+        linkedNumber = data.owner;
+        const status = document.getElementById('status');
+        status.innerHTML = '✅ Linked successfully! Session ID sent to your WhatsApp.';
+        status.className = 'status success';
+        document.getElementById('startBtn').textContent = 'Linked ✅';
+        document.getElementById('copyCodeBtn').style.display = 'block';
+      }
+    } catch (e) {}
+  }, 2000);
+}
+
+function copySessionId() {
+  // For now we just prompt — the real session ID is on WhatsApp
+  alert('Check your WhatsApp — your session ID has been sent to you. Forward it to the admin to deploy your bot.');
+}
+</script>
+</body>
+</html>
