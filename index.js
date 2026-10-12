@@ -3,6 +3,7 @@ const { useMultiFileAuthState, makeWASocket, DisconnectReason, fetchLatestBailey
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const P = require('pino');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -22,9 +23,8 @@ function encodeSession(sessionFolder) {
     for (const name of fs.readdirSync(dir)) {
       const fp = path.join(dir, name);
       const stat = fs.statSync(fp);
-      if (stat.isDirectory()) {
-        scan(fp, base + name + '/');
-      } else {
+      if (stat.isDirectory()) scan(fp, base + name + '/');
+      else {
         const buf = fs.readFileSync(fp);
         files[base + name] = buf.toString('base64');
       }
@@ -34,64 +34,85 @@ function encodeSession(sessionFolder) {
   return Buffer.from(JSON.stringify(files)).toString('base64');
 }
 
+// Use a stable Chrome on Windows browser identity — most reliable for pairing
+function getBrowserConfig() {
+  return Browsers.ubuntu('Chrome');
+  // returns ['Ubuntu', 'Chrome', '22.04.4']
+}
+
 // === Start pairing — phone number flow ===
 app.post('/api/pair/start', async (req, res) => {
-  const phone = (req.body.phone || '').replace(/[^0-9]/g, '');
+  let phone = (req.body.phone || '').replace(/[^0-9]/g, '');
   if (phone.length < 10) return res.status(400).json({ error: 'Invalid phone number' });
+  // Remove leading zeros (common when user types 0712345678 instead of 254712345678)
+  phone = phone.replace(/^0+/, '');
 
   const sessionId = 'snuggle-' + crypto.randomUUID().slice(0, 8);
   const sessionFolder = path.join(SESSIONS_DIR, sessionId);
+  // Always start fresh — never reuse a folder
+  fs.rmSync(sessionFolder, { recursive: true, force: true });
   fs.mkdirSync(sessionFolder, { recursive: true });
 
   try {
     const { state, saveCreds } = await useMultiFileAuthState(sessionFolder);
-    const { version } = await fetchLatestBaileysVersion();
+    const { version, isLatest } = await fetchLatestBaileysVersion();
+    console.log(`[PAIR] Using Baileys v${version.join('.')} (latest=${isLatest})`);
+
+    const logger = P({ level: 'warn' }); // we want to see warnings
 
     const sock = makeWASocket({
       version,
       auth: state,
       printQRInTerminal: false,
-      browser: Browsers.appropriate('Chrome'),
-      logger: require('pino')({ level: 'silent' }),
+      browser: getBrowserConfig(),
+      logger,
+      markOnlineOnConnect: false,
+      connectTimeoutMs: 30000,
+      keepAliveIntervalMs: 30000,
+      defaultQueryTimeoutMs: 60000,
     });
 
-    activePairs.set(sessionId, { sock, sessionFolder, saveCreds, phone });
+    const pairRecord = { sock, sessionFolder, saveCreds, phone, pairingCode: null, status: 'starting' };
+    activePairs.set(sessionId, pairRecord);
+
     sock.ev.on('creds.update', saveCreds);
 
-    let pairingCodeSent = false;
+    let codeRequested = false;
     sock.ev.on('connection.update', async (update) => {
-      // When the socket opens its first WS connection, request the pairing code
-      if (update.connection === 'connecting' && !pairingCodeSent) {
-        try {
-          // Give Baileys a moment to finish the noise handshake
-          await new Promise(r => setTimeout(r, 1500));
-          const pairingCode = await sock.requestPairingCode(phone);
-          pairingCodeSent = true;
-          if (activePairs.has(sessionId)) {
-            activePairs.get(sessionId).pairingCode = pairingCode;
+      console.log(`[PAIR ${sessionId.slice(0,12)}] conn update:`, update.connection, update.receivedHistoryPlot || '', update.lastDisconnect?.error?.message || '');
+
+      if (update.connection === 'connecting' && !codeRequested) {
+        codeRequested = true;
+        // Wait for the noise handshake to settle
+        setTimeout(async () => {
+          try {
+            const code = await sock.requestPairingCode(phone);
+            pairRecord.pairingCode = code;
+            pairRecord.status = 'code_sent';
+            console.log(`[PAIR] ${phone}: code ${code}`);
+          } catch (e) {
+            console.error('[PAIR] requestPairingCode failed:', e.message);
+            pairRecord.status = 'error';
+            pairRecord.error = e.message;
           }
-          console.log(`[PAIR] ${phone}: code ${pairingCode} sent to WhatsApp servers`);
-        } catch (e) {
-          console.error('requestPairingCode failed:', e.message);
-        }
+        }, 2500);
       }
 
       if (update.connection === 'open') {
         const ownerJid = sock.user.id;
         const ownerNumber = ownerJid.split(':')[0].split('@')[0];
+        pairRecord.status = 'linked';
 
         const sessionB64 = encodeSession(sessionFolder);
         const shortSession = 'yobbyx:~' + sessionB64;
-        await sock.sendMessage(ownerJid, {
-          text: `*SNUGGLE X SESSION ID* 🔑\n\n${shortSession}\n\n_Copy this session ID and send it to the admin to deploy your bot on the Snuggle X platform._`,
-        });
-
-        await sock.sendMessage(ownerJid, {
-          text: '*`SUCCESSFUL & VERIFIED ✅`*\n> snuggle x bot\n`contact developer for deploying`\n> 0795314221 or 0181163563',
-        });
-
-        const ownerFile = path.join(sessionFolder, 'owner.txt');
-        fs.writeFileSync(ownerFile, ownerNumber);
+        try {
+          await sock.sendMessage(ownerJid, {
+            text: `*SNUGGLE X SESSION ID* 🔑\n\n${shortSession}\n\n_Copy this session ID and send it to the admin to deploy your bot on the Snuggle X platform._`,
+          });
+          await sock.sendMessage(ownerJid, {
+            text: '*`SUCCESSFUL & VERIFIED ✅`*\n> snuggle x bot\n`contact developer for deploying`\n> 0795314221 or 0181163563',
+          });
+        } catch (e) { console.error('[PAIR] sendMessage failed:', e.message); }
 
         setTimeout(() => {
           try { sock.logout(); } catch (e) {}
@@ -99,12 +120,21 @@ app.post('/api/pair/start', async (req, res) => {
           console.log(`[PAIR] ${ownerNumber} linked, session saved, disconnected`);
         }, 3000);
       }
+
       if (update.connection === 'close') {
+        const code = update.lastDisconnect?.error?.output?.statusCode;
+        console.log(`[PAIR] closed, code=${code}`);
+        if (code !== DisconnectReason.loggedOut && pairRecord.status !== 'linked') {
+          // If we haven't linked yet, try reconnecting ONCE
+          if (codeRequested && !pairRecord.pairingCode && pairRecord.status !== 'error') {
+            // Already attempted, don't loop forever
+            pairRecord.status = 'failed';
+          }
+        }
         activePairs.delete(sessionId);
       }
     });
 
-    // Respond immediately with sessionId — the pairing code arrives async
     res.json({ sessionId, pairingCode: null, message: 'Pairing code is being requested, poll /api/pair/status/:sessionId' });
   } catch (e) {
     console.error('Pair start error:', e);
@@ -114,10 +144,12 @@ app.post('/api/pair/start', async (req, res) => {
 
 app.get('/api/pair/status/:sessionId', (req, res) => {
   const data = activePairs.get(req.params.sessionId);
-  if (!data) return res.json({ linked: true }); // session gone = either linked or expired
+  if (!data) return res.json({ linked: true }); // session gone = linked or expired
   res.json({
     linked: !!data.sock?.user?.id,
     pairingCode: data.pairingCode || null,
+    status: data.status,
+    error: data.error || null,
     owner: data.sock?.user?.id ? data.sock.user.id.split(':')[0] : null,
   });
 });
