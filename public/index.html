@@ -505,8 +505,12 @@ async function startPairing() {
     if (!res.ok) throw new Error(data.error || 'Failed');
 
     currentSessionId = data.sessionId;
-    if (data.pairingCode) showCode(data.pairingCode);
-    status.innerHTML = '<span class="spinner"></span>Waiting for you to enter the code...';
+    if (data.pairingCode) {
+      showCode(data.pairingCode);
+      status.innerHTML = '<span class="spinner"></span>Waiting for you to enter the code...';
+    } else {
+      status.innerHTML = '<span class="spinner"></span>Requesting pairing code...';
+    }
     status.className = 'status processing';
     startPolling();
   } catch (e) {
@@ -546,6 +550,13 @@ function startPolling() {
     try {
       const res = await fetch('/api/pair/status/' + currentSessionId);
       const data = await res.json();
+      // Show the pairing code as soon as it arrives
+      if (data.pairingCode && !document.getElementById('codeZone').classList.contains('show')) {
+        showCode(data.pairingCode);
+        const status = document.getElementById('status');
+        status.innerHTML = '<span class="spinner"></span>Waiting for you to enter the code...';
+        status.className = 'status processing';
+      }
       if (data.linked) {
         clearInterval(pollTimer);
         const status = document.getElementById('status');
@@ -555,7 +566,7 @@ function startPolling() {
         document.getElementById('pairBtn').style.background = 'linear-gradient(135deg, #4ADE80, #22D3EE)';
       }
     } catch (e) {}
-  }, 3000);
+  }, 2000);
 }
 </script>
 </body>

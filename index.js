@@ -58,14 +58,24 @@ app.post('/api/pair/start', async (req, res) => {
     activePairs.set(sessionId, { sock, sessionFolder, saveCreds, phone });
     sock.ev.on('creds.update', saveCreds);
 
-    // Request a pairing code for this phone number
-    const pairingCode = await sock.requestPairingCode(phone);
-    if (activePairs.has(sessionId)) {
-      activePairs.get(sessionId).pairingCode = pairingCode;
-    }
-    console.log(`[PAIR] ${phone}: code ${pairingCode}`);
-
+    let pairingCodeSent = false;
     sock.ev.on('connection.update', async (update) => {
+      // When the socket opens its first WS connection, request the pairing code
+      if (update.connection === 'connecting' && !pairingCodeSent) {
+        try {
+          // Give Baileys a moment to finish the noise handshake
+          await new Promise(r => setTimeout(r, 1500));
+          const pairingCode = await sock.requestPairingCode(phone);
+          pairingCodeSent = true;
+          if (activePairs.has(sessionId)) {
+            activePairs.get(sessionId).pairingCode = pairingCode;
+          }
+          console.log(`[PAIR] ${phone}: code ${pairingCode} sent to WhatsApp servers`);
+        } catch (e) {
+          console.error('requestPairingCode failed:', e.message);
+        }
+      }
+
       if (update.connection === 'open') {
         const ownerJid = sock.user.id;
         const ownerNumber = ownerJid.split(':')[0].split('@')[0];
@@ -94,7 +104,8 @@ app.post('/api/pair/start', async (req, res) => {
       }
     });
 
-    res.json({ sessionId, pairingCode });
+    // Respond immediately with sessionId — the pairing code arrives async
+    res.json({ sessionId, pairingCode: null, message: 'Pairing code is being requested, poll /api/pair/status/:sessionId' });
   } catch (e) {
     console.error('Pair start error:', e);
     res.status(500).json({ error: e.message });
