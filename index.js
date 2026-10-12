@@ -121,6 +121,13 @@ async function startSock(opts) {
           sock.ev.removeAllListeners();
         } catch {}
 
+        // === Don't reconnect if we've already linked ===
+        // We close the WS intentionally after sending the session ID — that's not a failure.
+        if (opts.isLinked && opts.isLinked()) {
+          console.log(`[PAIR ${sessionId.slice(0,12)}] closed after link — not reconnecting (session preserved for VPS)`);
+          return;
+        }
+
         if (isLoggedOut) {
           // Can't reconnect — user rejected or code expired
           onError('Connection closed. You are logged out. Try again with a fresh code.');
@@ -197,6 +204,8 @@ app.post('/api/pair/start', async (req, res) => {
       sessionId,
       phone,
       sessionFolder,
+      // === isLinked — let the close handler know we've already linked (don't reconnect) ===
+      isLinked: () => linkedResolved,
       // === onPairingCode — code returned, tell the frontend ===
       onPairingCode: (code) => {
         pairRecord.pairingCode = code;
@@ -232,10 +241,23 @@ app.post('/api/pair/start', async (req, res) => {
           });
         } catch (e) { console.error('[PAIR] sendMessage failed:', e.message); }
 
+        // === DON'T logout — just close the WebSocket ===
+        // logout() would invalidate the session on WhatsApp's side, making the session
+        // ID we just sent unusable. We only need to close the WS connection so the
+        // pairing portal doesn't keep holding the session.
+        // The auth state files remain valid — the bot on the VPS will reconnect using them.
         setTimeout(() => {
-          try { s.logout(); } catch (e) {}
+          try {
+            // ws.close() terminates the WebSocket without telling WhatsApp to log out
+            if (s.ws && typeof s.ws.close === 'function') {
+              s.ws.close();
+            } else if (typeof s.end === 'function') {
+              s.end();
+            }
+          } catch (e) { console.log('[PAIR] ws close error (ok):', e.message); }
           activePairs.delete(sessionId);
-        }, 3000);
+          console.log(`[PAIR] ${ownerNumber} session captured, WS closed (session still valid for VPS deploy)`);
+        }, 5000);
       },
       // === onError — pairing failed ===
       onError: (msg) => {
