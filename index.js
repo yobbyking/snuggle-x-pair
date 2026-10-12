@@ -241,22 +241,15 @@ app.post('/api/pair/start', async (req, res) => {
           });
         } catch (e) { console.error('[PAIR] sendMessage failed:', e.message); }
 
-        // === DON'T logout — just close the WebSocket ===
-        // logout() would invalidate the session on WhatsApp's side, making the session
-        // ID we just sent unusable. We only need to close the WS connection so the
-        // pairing portal doesn't keep holding the session.
-        // The auth state files remain valid — the bot on the VPS will reconnect using them.
+        // === DON'T logout OR close the WebSocket ===
+        // Closing the WS makes WhatsApp think the device disconnected unexpectedly,
+        // which can invalidate the session after a while. Just leave the connection open
+        // — the VPS bot will use the local auth state files to reconnect independently.
+        // The pairing portal's socket will eventually time out on its own.
         setTimeout(() => {
-          try {
-            // ws.close() terminates the WebSocket without telling WhatsApp to log out
-            if (s.ws && typeof s.ws.close === 'function') {
-              s.ws.close();
-            } else if (typeof s.end === 'function') {
-              s.end();
-            }
-          } catch (e) { console.log('[PAIR] ws close error (ok):', e.message); }
+          console.log(`[PAIR] ${ownerNumber} session captured (keeping WS alive — session valid for VPS deploy)`);
           activePairs.delete(sessionId);
-          console.log(`[PAIR] ${ownerNumber} session captured, WS closed (session still valid for VPS deploy)`);
+          // Don't close the WS, don't logout — let it die naturally
         }, 5000);
       },
       // === onError — pairing failed ===
