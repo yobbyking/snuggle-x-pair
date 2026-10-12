@@ -44,15 +44,25 @@ function encodeSession(sessionFolder) {
   }
   scan(sessionFolder);
 
-  // Compact JSON, gzip, then base64 — much smaller than raw base64 of JSON
+  // Compact JSON, gzip, then base64url (URL-safe — no + or / that get mangled by WhatsApp)
+  // Standard base64 uses A-Za-z0-9+/ which can be modified by WhatsApp/IM gateways:
+  //   - "+" may be converted to space
+  //   - "/" may be URL-encoded
+  // base64url uses A-Za-z0-9-_ which is safe for copy-paste through any messaging app
   const json = JSON.stringify(files);
   const gzipped = zlib.gzipSync(Buffer.from(json, 'utf-8'), { level: 9 });
-  return gzipped.toString('base64');
+  return gzipped.toString('base64')
+    .replace(/\+/g, '-')   // + → -
+    .replace(/\//g, '_')   // / → _
+    .replace(/=+$/, '');    // strip = padding
 }
 
 function decodeSession(b64) {
-  // Reverse: base64 → gunzip → JSON → files map
-  const gzipped = Buffer.from(b64, 'base64');
+  // Convert base64url back to standard base64
+  let standardB64 = b64.replace(/-/g, '+').replace(/_/g, '/');
+  // Add padding back
+  standardB64 += '='.repeat((4 - standardB64.length % 4) % 4);
+  const gzipped = Buffer.from(standardB64, 'base64');
   const json = zlib.gunzipSync(gzipped).toString('utf-8');
   return JSON.parse(json);
 }
@@ -219,6 +229,29 @@ app.post('/api/pair/start', async (req, res) => {
         pairRecord.sock = s;
         console.log(`[PAIR] ✅ Linked as ${ownerJid}`);
 
+        // === WAIT for full history sync (receivedHistoryPlot) before sending session ID ===
+        // This is CRITICAL — if we send messages before the keys are fully synced,
+        // WhatsApp shows "Waiting for this message. This may take a while" on the user's phone.
+        // We wait up to 30 seconds for the history sync to complete.
+        console.log(`[PAIR] Waiting for history sync before sending session ID...`);
+        let historySynced = false;
+        const historyHandler = (update) => {
+          if (update.receivedHistoryPlot || update.receivedPendingNotifications) {
+            historySynced = true;
+            console.log(`[PAIR] History sync complete`);
+          }
+        };
+        s.ev.on('connection.update', historyHandler);
+        // Wait up to 30 seconds for history sync, but proceed anyway after that
+        for (let i = 0; i < 30 && !historySynced; i++) {
+          await new Promise(r => setTimeout(r, 1000));
+        }
+        s.ev.off('connection.update', historyHandler);
+        console.log(`[PAIR] Proceeding to send session ID (synced=${historySynced})`);
+
+        // === Extra wait to ensure keys are fully registered ===
+        await new Promise(r => setTimeout(r, 3000));
+
         try {
           const sessionB64 = encodeSession(sessionFolder);
           const shortSession = 'yobbyx:~' + sessionB64;
@@ -241,15 +274,22 @@ app.post('/api/pair/start', async (req, res) => {
           });
         } catch (e) { console.error('[PAIR] sendMessage failed:', e.message); }
 
-        // === DON'T logout OR close the WebSocket ===
-        // Closing the WS makes WhatsApp think the device disconnected unexpectedly,
-        // which can invalidate the session after a while. Just leave the connection open
-        // — the VPS bot will use the local auth state files to reconnect independently.
-        // The pairing portal's socket will eventually time out on its own.
+        // === Close the WS gracefully after sending ===
+        // Use sock.end() — sends a proper WebSocket close frame.
+        // The bot will appear "offline" in WhatsApp's Linked Devices (last seen recently),
+        // but the session stays VALID — the VPS bot can reconnect using the auth files.
+        // We DON'T use sock.logout() (which invalidates the session).
         setTimeout(() => {
-          console.log(`[PAIR] ${ownerNumber} session captured (keeping WS alive — session valid for VPS deploy)`);
+          try {
+            if (typeof s.end === 'function') {
+              s.end();
+              console.log(`[PAIR] ${ownerNumber} WS ended gracefully (session preserved)`);
+            } else if (s.ws && typeof s.ws.close === 'function') {
+              s.ws.close();
+              console.log(`[PAIR] ${ownerNumber} WS closed gracefully (session preserved)`);
+            }
+          } catch (e) { console.log('[PAIR] WS close error (ok):', e.message); }
           activePairs.delete(sessionId);
-          // Don't close the WS, don't logout — let it die naturally
         }, 5000);
       },
       // === onError — pairing failed ===
