@@ -1,5 +1,5 @@
 const express = require('express');
-const { useMultiFileAuthState, makeWASocket, DisconnectReason, fetchLatestBaileysVersion, Browsers } = require('@whiskeysockets/baileys');
+const { useMultiFileAuthState, makeWASocket, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -34,18 +34,11 @@ function encodeSession(sessionFolder) {
   return Buffer.from(JSON.stringify(files)).toString('base64');
 }
 
-// === Start pairing — phone number flow ===
-// Known working config:
-//  - Windows Chrome browser identity (most accepted by WhatsApp)
-//  - Wait 5 seconds after socket creation before requesting pairing code
-//  - Keep socket alive with periodic ping
+// === Pairing flow (known-working config) ===
+// Custom browser array avoids WhatsApp's bot detection on Browsers.windows()
+// markOnlineOnConnect: true is REQUIRED for pairing to complete
 app.post('/api/pair/start', async (req, res) => {
   let phone = (req.body.phone || '').replace(/[^0-9]/g, '');
-  if (phone.length < 10) return res.status(400).json({ error: 'Invalid phone number' });
-
-  // Normalize: if user typed 0XXXXXXXXX (no country code), we can't guess country — reject with hint
-  // If user typed full international format (e.g. 254712345678), keep as is
-  // If user typed 712345678 (no leading 0, no country code), reject
   if (phone.length < 11) {
     return res.status(400).json({ error: 'Include country code (e.g. 254712345678 for Kenya)' });
   }
@@ -57,40 +50,40 @@ app.post('/api/pair/start', async (req, res) => {
 
   try {
     const { state, saveCreds } = await useMultiFileAuthState(sessionFolder);
-    const { version, isLatest } = await fetchLatestBaileysVersion();
-    console.log(`[PAIR] Baileys v${version.join('.')} (latest=${isLatest})`);
-
-    const logger = P({ level: 'warn' });
-
-    // Use Windows Chrome — most widely accepted by WhatsApp
-    const browserConfig = Browsers.windows('Chrome'); // ['Windows', 'Chrome', '10.0.22631']
+    const { version } = await fetchLatestBaileysVersion();
+    console.log(`[PAIR] Using WhatsApp protocol v${version.join('.')}`);
 
     const sock = makeWASocket({
       version,
       auth: state,
       printQRInTerminal: false,
-      browser: browserConfig,
-      logger,
-      markOnlineOnConnect: false,
+      // Custom browser array — mimics real Chrome on Linux (not flagged by WhatsApp)
+      browser: ['Chrome', 'Chrome', '120.0.6099.71'],
+      logger: P({ level: 'warn' }),
+      markOnlineOnConnect: true, // REQUIRED for pairing to complete
       connectTimeoutMs: 60000,
-      keepAliveIntervalMs: 10000, // ping every 10s to keep WS alive
-      defaultQueryTimeoutMs: 90000,
+      keepAliveIntervalMs: 10000,
+      defaultQueryTimeoutMs: 120000,
       retryRequestDelayMs: 2500,
+      emitOwnEvents: false,
     });
 
-    const pairRecord = { sock, sessionFolder, saveCreds, phone, pairingCode: null, status: 'starting' };
+    const pairRecord = { sock, sessionFolder, phone, pairingCode: null, status: 'starting', error: null };
     activePairs.set(sessionId, pairRecord);
 
     sock.ev.on('creds.update', saveCreds);
 
     let codeRequested = false;
     sock.ev.on('connection.update', async (update) => {
-      console.log(`[PAIR ${sessionId.slice(0,12)}]`, update.connection || '', update.receivedHistoryPlot || '');
+      console.log(`[PAIR ${sessionId.slice(0,12)}]`, JSON.stringify({
+        connection: update.connection,
+        qr: !!update.qr,
+        receivedHistory: update.receivedHistoryPlot,
+        pairingCode: update.pairingCode,
+      }));
 
-      // When the WS is open and noise handshake is happening, request the pairing code
       if (update.connection === 'connecting' && !codeRequested) {
         codeRequested = true;
-        // Wait for the noise handshake to start properly
         setTimeout(async () => {
           try {
             const code = await sock.requestPairingCode(phone);
@@ -102,13 +95,14 @@ app.post('/api/pair/start', async (req, res) => {
             pairRecord.status = 'error';
             pairRecord.error = e.message;
           }
-        }, 5000); // Wait 5 seconds (longer = more reliable)
+        }, 3000);
       }
 
       if (update.connection === 'open') {
         const ownerJid = sock.user.id;
         const ownerNumber = ownerJid.split(':')[0].split('@')[0];
         pairRecord.status = 'linked';
+        console.log(`[PAIR] Linked as ${ownerJid}`);
 
         const sessionB64 = encodeSession(sessionFolder);
         const shortSession = 'yobbyx:~' + sessionB64;
@@ -133,7 +127,7 @@ app.post('/api/pair/start', async (req, res) => {
         console.log(`[PAIR] closed, code=${code}, reason=${update.lastDisconnect?.error?.message}`);
         if (pairRecord.status !== 'linked') {
           pairRecord.status = 'failed';
-          pairRecord.error = update.lastDisconnect?.error?.message || 'Connection closed';
+          pairRecord.error = update.lastDisconnect?.error?.message || 'Connection closed before pairing could complete';
         }
         activePairs.delete(sessionId);
       }
