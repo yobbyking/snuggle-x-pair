@@ -7,11 +7,15 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "6.7.24",
+    "@whiskeysockets/baileys": "7.0.0-rc14",
     "express": "^4.19.2",
     "pino": "^9.4.0"
   },
   "engines": {
     "node": ">=18"
+  },
+  "allowScripts": {
+    "@whiskeysockets/baileys@7.0.0-rc14": true,
+    "protobufjs@7.6.6": true
   }
 }
