@@ -48,10 +48,11 @@ async function encodeSession(sessionFolder) {
   // === Store on the VPS (Railway, always-on) ===
   // The pairing site uploads the gzipped session to the VPS dashboard, which
   // returns a 12-char hex short ID. This keeps the session ID tiny (20 chars total).
-  // Try HTTPS first (Railway proxy supports it), then HTTP as fallback.
+  // Railway's port proxy only serves HTTP on port 13558 — HTTPS hangs.
+  // So we try HTTP first (fast), then HTTPS as fallback.
   const VPS_HOSTS = [
-    'https://maglev.proxy.rlwy.net:13558',
     'http://maglev.proxy.rlwy.net:13558',
+    'https://maglev.proxy.rlwy.net:13558',
   ];
   const VPS_PASS = process.env.VPS_PASS || 'yobby1';
 
@@ -60,7 +61,7 @@ async function encodeSession(sessionFolder) {
   for (const vpsUrl of VPS_HOSTS) {
     try {
       console.log(`[PAIR] Trying VPS at ${vpsUrl}...`);
-      const loginRes = await axios.post(`${vpsUrl}/api/login`, { password: VPS_PASS }, { timeout: 15000 });
+      const loginRes = await axios.post(`${vpsUrl}/api/login`, { password: VPS_PASS }, { timeout: 10000 });
       const vpsToken = loginRes.data.token;
       const storeRes = await axios.post(`${vpsUrl}/api/session/store`,
         { session: gzipped.toString('base64') },
