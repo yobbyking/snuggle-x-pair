@@ -44,36 +44,33 @@ async function encodeSession(sessionFolder) {
   const gzipped = zlib.gzipSync(Buffer.from(json, 'utf-8'), { level: 9 });
   console.log(`[PAIR] Session size: ${(gzipped.length / 1024).toFixed(1)} KB gzipped`);
 
-  // Store in memory with a short ID — the VPS will fetch it via /session/:id
-  // The session ID becomes: yobbyx:~abc12345 (about 20 chars!)
-  // Sessions expire after 60 minutes (enough time to deploy)
-  const shortId = crypto.randomBytes(6).toString('hex'); // 12 hex chars
-  sessionStore.set(shortId, gzipped);
+  // === Store on the VPS (Railway, always-on) instead of in-memory ===
+  // The VPS never sleeps, so sessions persist reliably.
+  // The pairing site POSTs the session to the VPS dashboard, which returns a short ID.
+  const VPS_URL = process.env.VPS_URL || 'https://maglev.proxy.rlwy.net:13558';
+  const VPS_PASS = process.env.VPS_PASS || 'yobby1';
+  try {
+    // Login to VPS dashboard
+    const loginRes = await axios.post(`${VPS_URL}/api/login`, { password: VPS_PASS }, { timeout: 15000 });
+    const vpsToken = loginRes.data.token;
 
-  // Auto-expire after 60 minutes
-  setTimeout(() => {
-    sessionStore.delete(shortId);
-    console.log(`[PAIR] Session ${shortId} expired`);
-  }, 60 * 60 * 1000);
-
-  console.log(`[PAIR] Session stored with ID: ${shortId}`);
-  return shortId;
-}
-
-// In-memory session store (short ID → gzipped session buffer)
-// Sessions auto-expire after 60 minutes
-const sessionStore = new Map();
-
-// Endpoint for VPS to fetch session by short ID
-app.get('/session/:id', (req, res) => {
-  const gzipped = sessionStore.get(req.params.id);
-  if (!gzipped) {
-    return res.status(404).json({ error: 'Session not found or expired' });
+    // Upload session to VPS (gets a short ID back)
+    const storeRes = await axios.post(`${VPS_URL}/api/session/store`,
+      { session: gzipped.toString('base64') },
+      { headers: { 'x-admin-token': vpsToken }, timeout: 30000 }
+    );
+    const shortId = storeRes.data.shortId;
+    console.log(`[PAIR] Session stored on VPS with ID: ${shortId}`);
+    return shortId;
+  } catch (e) {
+    console.error('[PAIR] Failed to store session on VPS:', e.message);
+    // Fallback: use URL-safe base64 inline (longer but works without VPS)
+    return gzipped.toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
   }
-  res.set('Content-Type', 'application/gzip');
-  res.set('Content-Disposition', 'attachment; filename="session.gz"');
-  res.send(gzipped);
-});
+}
 
 function decodeSession(b64) {
   // Convert base64url back to standard base64
