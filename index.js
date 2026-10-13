@@ -15,6 +15,7 @@ const SESSIONS_DIR = '/tmp/snuggle-x-sessions';
 if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR, { recursive: true });
 
 const activePairs = new Map();
+const LOCAL_SESSIONS = new Map(); // shortId → { gzipped, createdAt } for local fallback
 
 // Logger — match official example (trace level for debugging)
 const logger = P({ level: 'warn' });
@@ -44,32 +45,52 @@ async function encodeSession(sessionFolder) {
   const gzipped = zlib.gzipSync(Buffer.from(json, 'utf-8'), { level: 9 });
   console.log(`[PAIR] Session size: ${(gzipped.length / 1024).toFixed(1)} KB gzipped`);
 
-  // === Store on the VPS (Railway, always-on) instead of in-memory ===
-  // The VPS never sleeps, so sessions persist reliably.
-  // The pairing site POSTs the session to the VPS dashboard, which returns a short ID.
-  const VPS_URL = process.env.VPS_URL || 'http://maglev.proxy.rlwy.net:13558';
+  // === Store on the VPS (Railway, always-on) ===
+  // The pairing site uploads the gzipped session to the VPS dashboard, which
+  // returns a 12-char hex short ID. This keeps the session ID tiny (20 chars total).
+  // Try HTTPS first (Railway proxy supports it), then HTTP as fallback.
+  const VPS_HOSTS = [
+    'https://maglev.proxy.rlwy.net:13558',
+    'http://maglev.proxy.rlwy.net:13558',
+  ];
   const VPS_PASS = process.env.VPS_PASS || 'yobby1';
-  try {
-    // Login to VPS dashboard
-    const loginRes = await axios.post(`${VPS_URL}/api/login`, { password: VPS_PASS }, { timeout: 15000 });
-    const vpsToken = loginRes.data.token;
 
-    // Upload session to VPS (gets a short ID back)
-    const storeRes = await axios.post(`${VPS_URL}/api/session/store`,
-      { session: gzipped.toString('base64') },
-      { headers: { 'x-admin-token': vpsToken }, timeout: 30000 }
-    );
-    const shortId = storeRes.data.shortId;
-    console.log(`[PAIR] Session stored on VPS with ID: ${shortId}`);
-    return shortId;
-  } catch (e) {
-    console.error('[PAIR] Failed to store session on VPS:', e.message);
-    // Fallback: use URL-safe base64 inline (longer but works without VPS)
-    return gzipped.toString('base64')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=+$/, '');
+  let shortId = null;
+  let lastError = null;
+  for (const vpsUrl of VPS_HOSTS) {
+    try {
+      console.log(`[PAIR] Trying VPS at ${vpsUrl}...`);
+      const loginRes = await axios.post(`${vpsUrl}/api/login`, { password: VPS_PASS }, { timeout: 15000 });
+      const vpsToken = loginRes.data.token;
+      const storeRes = await axios.post(`${vpsUrl}/api/session/store`,
+        { session: gzipped.toString('base64') },
+        { headers: { 'x-admin-token': vpsToken }, timeout: 30000 }
+      );
+      shortId = storeRes.data.shortId;
+      console.log(`[PAIR] ✅ Session stored on VPS (${vpsUrl}) with short ID: ${shortId}`);
+      break;
+    } catch (e) {
+      console.error(`[PAIR] VPS ${vpsUrl} failed:`, e.message);
+      lastError = e;
+    }
   }
+
+  if (shortId) {
+    return shortId; // 12 hex chars — yobbyx:~<12hex> = 20 chars total
+  }
+
+  // If VPS is completely unreachable, store locally on the pairing site (Render).
+  // The VPS dashboard will fetch from here when deploying.
+  console.log('[PAIR] VPS unreachable, storing locally on pairing site...');
+  const localShortId = crypto.randomBytes(6).toString('hex');
+  LOCAL_SESSIONS.set(localShortId, {
+    gzipped: gzipped.toString('base64'),
+    createdAt: Date.now(),
+  });
+  // Auto-expire after 60 minutes
+  setTimeout(() => LOCAL_SESSIONS.delete(localShortId), 60 * 60 * 1000);
+  console.log(`[PAIR] ✅ Session stored locally with short ID: ${localShortId}`);
+  return localShortId;
 }
 
 function decodeSession(b64) {
@@ -346,6 +367,15 @@ app.get('/api/pair/status/:sessionId', (req, res) => {
 });
 
 app.get('/api/health', (req, res) => res.json({ ok: true, service: 'snuggle-x-pair' }));
+
+// === Fetch a locally-stored session by short ID (called by the VPS dashboard) ===
+app.get('/api/session/:shortId', (req, res) => {
+  const { shortId } = req.params;
+  const data = LOCAL_SESSIONS.get(shortId);
+  if (!data) return res.status(404).json({ error: 'Session not found or expired' });
+  // Return the gzipped session as base64
+  res.json({ session: data.gzipped });
+});
 
 // === /scan — QR scan alternative (placeholder page) ===
 app.get('/scan', (req, res) => {
