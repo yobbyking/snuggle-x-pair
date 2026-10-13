@@ -47,7 +47,7 @@ async function encodeSession(sessionFolder) {
   // === Store on the VPS (Railway, always-on) instead of in-memory ===
   // The VPS never sleeps, so sessions persist reliably.
   // The pairing site POSTs the session to the VPS dashboard, which returns a short ID.
-  const VPS_URL = process.env.VPS_URL || 'https://maglev.proxy.rlwy.net:13558';
+  const VPS_URL = process.env.VPS_URL || 'http://maglev.proxy.rlwy.net:13558';
   const VPS_PASS = process.env.VPS_PASS || 'yobby1';
   try {
     // Login to VPS dashboard
