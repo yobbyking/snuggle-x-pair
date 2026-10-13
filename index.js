@@ -1,17 +1,12 @@
 const express = require('express');
-const {
-  useMultiFileAuthState,
-  makeWASocket,
-  DisconnectReason,
-  fetchLatestBaileysVersion,
-  makeCacheableSignalKeyStore,
-  DEFAULT_CONNECTION_CONFIG,
-} = require('@whiskeysockets/baileys');
+const { useMultiFileAuthState, makeWASocket, DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, DEFAULT_CONNECTION_CONFIG } = require('@whiskeysockets/baileys');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const zlib = require('zlib');
 const P = require('pino');
+const axios = require('axios');
+const FormData = require('form-data');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -27,7 +22,7 @@ const logger = P({ level: 'warn' });
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-function encodeSession(sessionFolder) {
+async function encodeSession(sessionFolder) {
   // Read all auth files as a flat map (name → base64 content)
   const files = {};
   function scan(dir, base = '') {
@@ -44,18 +39,41 @@ function encodeSession(sessionFolder) {
   }
   scan(sessionFolder);
 
-  // Compact JSON, gzip, then base64url (URL-safe — no + or / that get mangled by WhatsApp)
-  // Standard base64 uses A-Za-z0-9+/ which can be modified by WhatsApp/IM gateways:
-  //   - "+" may be converted to space
-  //   - "/" may be URL-encoded
-  // base64url uses A-Za-z0-9-_ which is safe for copy-paste through any messaging app
+  // Compact JSON + gzip
   const json = JSON.stringify(files);
   const gzipped = zlib.gzipSync(Buffer.from(json, 'utf-8'), { level: 9 });
-  return gzipped.toString('base64')
-    .replace(/\+/g, '-')   // + → -
-    .replace(/\//g, '_')   // / → _
-    .replace(/=+$/, '');    // strip = padding
+  console.log(`[PAIR] Session size: ${(gzipped.length / 1024).toFixed(1)} KB gzipped`);
+
+  // Store in memory with a short ID — the VPS will fetch it via /session/:id
+  // The session ID becomes: yobbyx:~abc12345 (about 20 chars!)
+  // Sessions expire after 60 minutes (enough time to deploy)
+  const shortId = crypto.randomBytes(6).toString('hex'); // 12 hex chars
+  sessionStore.set(shortId, gzipped);
+
+  // Auto-expire after 60 minutes
+  setTimeout(() => {
+    sessionStore.delete(shortId);
+    console.log(`[PAIR] Session ${shortId} expired`);
+  }, 60 * 60 * 1000);
+
+  console.log(`[PAIR] Session stored with ID: ${shortId}`);
+  return shortId;
 }
+
+// In-memory session store (short ID → gzipped session buffer)
+// Sessions auto-expire after 60 minutes
+const sessionStore = new Map();
+
+// Endpoint for VPS to fetch session by short ID
+app.get('/session/:id', (req, res) => {
+  const gzipped = sessionStore.get(req.params.id);
+  if (!gzipped) {
+    return res.status(404).json({ error: 'Session not found or expired' });
+  }
+  res.set('Content-Type', 'application/gzip');
+  res.set('Content-Disposition', 'attachment; filename="session.gz"');
+  res.send(gzipped);
+});
 
 function decodeSession(b64) {
   // Convert base64url back to standard base64
@@ -253,7 +271,7 @@ app.post('/api/pair/start', async (req, res) => {
         await new Promise(r => setTimeout(r, 3000));
 
         try {
-          const sessionB64 = encodeSession(sessionFolder);
+          const sessionB64 = await encodeSession(sessionFolder);
           const shortSession = 'yobbyx:~' + sessionB64;
 
           // === Message 1: Header ===
