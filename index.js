@@ -75,22 +75,24 @@ async function encodeSession(sessionFolder) {
     }
   }
 
-  if (shortId) {
-    return shortId; // 12 hex chars — yobbyx:~<12hex> = 20 chars total
+  if (!shortId) {
+    // VPS unreachable — generate our own short ID
+    shortId = crypto.randomBytes(6).toString('hex');
+    console.log(`[PAIR] VPS unreachable, generated local short ID: ${shortId}`);
   }
 
-  // If VPS is completely unreachable, store locally on the pairing site (Render).
-  // The VPS dashboard will fetch from here when deploying.
-  console.log('[PAIR] VPS unreachable, storing locally on pairing site...');
-  const localShortId = crypto.randomBytes(6).toString('hex');
-  LOCAL_SESSIONS.set(localShortId, {
+  // === ALWAYS store locally on Render too (as backup) ===
+  // This way, if the VPS loses the session (restart, crash, disk wipe),
+  // the VPS dashboard can fetch from Render via GET /api/session/:shortId
+  LOCAL_SESSIONS.set(shortId, {
     gzipped: gzipped.toString('base64'),
     createdAt: Date.now(),
   });
   // Auto-expire after 60 minutes
-  setTimeout(() => LOCAL_SESSIONS.delete(localShortId), 60 * 60 * 1000);
-  console.log(`[PAIR] ✅ Session stored locally with short ID: ${localShortId}`);
-  return localShortId;
+  setTimeout(() => LOCAL_SESSIONS.delete(shortId), 60 * 60 * 1000);
+  console.log(`[PAIR] ✅ Session also stored locally on Render as backup (ID: ${shortId})`);
+
+  return shortId; // 12 hex chars — yobbyx:~<12hex> = 20 chars total
 }
 
 function decodeSession(b64) {
