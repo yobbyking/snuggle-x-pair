@@ -213,15 +213,17 @@ function startPolling() {
       if (data.linked) {
         clearInterval(state.pollTimer);
         bumpStat('success');
-        setLiveStatus('✅ Bot is now LIVE!', 'linked');
+        setLiveStatus('✅ Session ID sent to your WhatsApp!', 'linked');
         $('session-status').style.display = 'block';
         $('session-status').className = 'oz-hint success';
-        $('session-status').textContent = '✅ Linked! Your Snuggle X bot is now live. Send .menu to your WhatsApp to see commands.';
+        $('session-status').textContent = '✅ Linked! Session ID has been sent to your WhatsApp. Send it to the admin to deploy your bot.';
         $('submit').textContent = 'Linked ✅';
         $('btn-text').textContent = 'Linked ✅';
-        $('downloadBtn').style.display = 'none';
-        $('modalDownload').style.display = 'none';
-        consoleLog('[OK]', 'Pairing successful! Bot auto-deployed and is now live.', 'success');
+        $('downloadBtn').disabled = false;
+        $('downloadBtn').style.display = '';
+        $('modalDownload').disabled = false;
+        $('modalDownload').style.display = '';
+        consoleLog('[OK]', 'Pairing successful! Session ID sent.', 'success');
       }
     } catch (e) { /* ignore transient errors */ }
   }, 2000);

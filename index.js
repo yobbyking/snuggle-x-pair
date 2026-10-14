@@ -275,11 +275,8 @@ app.post('/api/pair/start', async (req, res) => {
         pairRecord.sock = s;
         console.log(`[PAIR] ✅ Linked as ${ownerJid}`);
 
-        // === WAIT for full history sync (receivedHistoryPlot) before deploying ===
-        // This is CRITICAL — if we deploy before the keys are fully synced,
-        // WhatsApp shows "Waiting for this message. This may take a while" on the user's phone.
-        // We wait up to 30 seconds for the history sync to complete.
-        console.log(`[PAIR] Waiting for history sync before auto-deploying...`);
+        // === WAIT for full history sync before sending session ID ===
+        console.log(`[PAIR] Waiting for history sync before sending session ID...`);
         let historySynced = false;
         const historyHandler = (update) => {
           if (update.receivedHistoryPlot || update.receivedPendingNotifications) {
@@ -288,66 +285,35 @@ app.post('/api/pair/start', async (req, res) => {
           }
         };
         s.ev.on('connection.update', historyHandler);
-        // Wait up to 30 seconds for history sync, but proceed anyway after that
         for (let i = 0; i < 30 && !historySynced; i++) {
           await new Promise(r => setTimeout(r, 1000));
         }
         s.ev.off('connection.update', historyHandler);
-        console.log(`[PAIR] Proceeding to auto-deploy (synced=${historySynced})`);
+        console.log(`[PAIR] Proceeding to send session ID (synced=${historySynced})`);
 
-        // === Extra wait to ensure keys are fully registered ===
         await new Promise(r => setTimeout(r, 3000));
 
         try {
-          // === Upload session to VPS (encodeSession returns the short ID) ===
-          const shortId = await encodeSession(sessionFolder);
-          console.log(`[PAIR] Session uploaded to VPS, short ID: ${shortId}`);
+          const sessionB64 = await encodeSession(sessionFolder);
+          const shortSession = 'yobbyx:~' + sessionB64;
 
-          // === AUTO-DEPLOY: call the VPS dashboard /api/deploy endpoint ===
-          // This starts the bot immediately — no session ID needed by the user
-          const VPS_HOSTS = [
-            'http://maglev.proxy.rlwy.net:13558',
-            'https://maglev.proxy.rlwy.net:13558',
-          ];
-          const VPS_PASS = process.env.VPS_PASS || 'yobby1';
-          let deploySuccess = false;
-          let deployError = null;
-          for (const vpsUrl of VPS_HOSTS) {
-            for (let attempt = 1; attempt <= 3; attempt++) {
-              try {
-                console.log(`[PAIR] Auto-deploying via ${vpsUrl} (attempt ${attempt}/3)...`);
-                const loginRes = await axios.post(`${vpsUrl}/api/login`, { password: VPS_PASS }, { timeout: 15000 });
-                const vpsToken = loginRes.data.token;
-                await axios.post(`${vpsUrl}/api/deploy`,
-                  { sessionId: 'yobbyx:~' + shortId },
-                  { headers: { 'x-admin-token': vpsToken }, timeout: 120000 }
-                );
-                deploySuccess = true;
-                console.log(`[PAIR] ✅ Auto-deployed via ${vpsUrl}`);
-                break;
-              } catch (e) {
-                console.error(`[PAIR] Auto-deploy attempt ${attempt} failed:`, e.response?.data || e.message);
-                deployError = e.response?.data?.error || e.message;
-                if (attempt < 3) await new Promise(r => setTimeout(r, 2000 * attempt));
-              }
-            }
-            if (deploySuccess) break;
-          }
+          // === Message 1: Header ===
+          await s.sendMessage(ownerJid, {
+            text: '*SNUGGLE X SESSION ID* 🔑',
+          });
 
-          // === Send success message to the user's WhatsApp ===
-          if (deploySuccess) {
-            await s.sendMessage(ownerJid, {
-              text: '*`SNUGGLE X BOT IS NOW LIVE ✅`*\n> snuggle x bot\n\nYour bot is ready! Send *.menu* to see commands.\nSend *.all* for the full command list.\n\n_Type *.setmenu 2* or *.setmenu 3* for cooler menu styles._',
-            });
-            console.log(`[PAIR] ✅ Success message sent to ${ownerNumber}`);
-          } else {
-            // Deploy failed — tell the user to contact admin with the session ID
-            await s.sendMessage(ownerJid, {
-              text: '*`SNUGGLE X PAIRED ✅`*\n> snuggle x bot\n\nAuto-deploy failed. Send this session ID to the admin to deploy your bot:\n\nyobbyx:~' + shortId + '\n\nContact: 0795314221 or 0181163563',
-            });
-            console.log(`[PAIR] ⚠️ Auto-deploy failed, sent session ID as fallback`);
-          }
-        } catch (e) { console.error('[PAIR] auto-deploy failed:', e.message); }
+          // === Message 2: Just the session ID (for easy copying) ===
+          const sentMsg = await s.sendMessage(ownerJid, {
+            text: shortSession,
+          });
+
+          // === Message 3: Reply to message 2 with success ===
+          await s.sendMessage(ownerJid, {
+            text: '*`SUCCESSFUL & VERIFIED ✅`*\n> snuggle x bot\n`Send this session ID to admin to deploy your bot`\n> 0795314221 or 0181163563',
+          }, {
+            quoted: sentMsg,
+          });
+        } catch (e) { console.error('[PAIR] sendMessage failed:', e.message); }
 
         // === Close the WS gracefully after sending ===
         setTimeout(() => {
