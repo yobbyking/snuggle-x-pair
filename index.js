@@ -58,28 +58,35 @@ async function encodeSession(sessionFolder) {
 
   let shortId = null;
   let lastError = null;
+  // Retry up to 3 times per host with exponential backoff to handle transient network issues
   for (const vpsUrl of VPS_HOSTS) {
-    try {
-      console.log(`[PAIR] Trying VPS at ${vpsUrl}...`);
-      const loginRes = await axios.post(`${vpsUrl}/api/login`, { password: VPS_PASS }, { timeout: 10000 });
-      const vpsToken = loginRes.data.token;
-      const storeRes = await axios.post(`${vpsUrl}/api/session/store`,
-        { session: gzipped.toString('base64') },
-        { headers: { 'x-admin-token': vpsToken }, timeout: 30000 }
-      );
-      shortId = storeRes.data.shortId;
-      console.log(`[PAIR] ✅ Session stored on VPS (${vpsUrl}) with short ID: ${shortId}`);
-      break;
-    } catch (e) {
-      console.error(`[PAIR] VPS ${vpsUrl} failed:`, e.message);
-      lastError = e;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        console.log(`[PAIR] Trying VPS at ${vpsUrl} (attempt ${attempt}/3)...`);
+        const loginRes = await axios.post(`${vpsUrl}/api/login`, { password: VPS_PASS }, { timeout: 15000 });
+        const vpsToken = loginRes.data.token;
+        const storeRes = await axios.post(`${vpsUrl}/api/session/store`,
+          { session: gzipped.toString('base64') },
+          { headers: { 'x-admin-token': vpsToken }, timeout: 60000 }
+        );
+        shortId = storeRes.data.shortId;
+        console.log(`[PAIR] ✅ Session stored on VPS (${vpsUrl}) with short ID: ${shortId}`);
+        break;
+      } catch (e) {
+        console.error(`[PAIR] VPS ${vpsUrl} attempt ${attempt} failed:`, e.message);
+        lastError = e;
+        if (attempt < 3) await new Promise(r => setTimeout(r, 2000 * attempt)); // 2s, 4s backoff
+      }
     }
+    if (shortId) break;
   }
 
   if (!shortId) {
-    // VPS unreachable — generate our own short ID
+    // VPS unreachable after all retries — generate a local short ID as fallback
+    // BUT also store locally so the VPS dashboard can fetch from Render
     shortId = crypto.randomBytes(6).toString('hex');
-    console.log(`[PAIR] VPS unreachable, generated local short ID: ${shortId}`);
+    console.log(`[PAIR] ⚠️ VPS unreachable after 3 retries, generated local short ID: ${shortId}`);
+    console.log(`[PAIR] ⚠️ Last error: ${lastError?.message || 'unknown'}`);
   }
 
   // === ALWAYS store locally on Render too (as backup) ===
@@ -89,9 +96,9 @@ async function encodeSession(sessionFolder) {
     gzipped: gzipped.toString('base64'),
     createdAt: Date.now(),
   });
-  // Auto-expire after 60 minutes
-  setTimeout(() => LOCAL_SESSIONS.delete(shortId), 60 * 60 * 1000);
-  console.log(`[PAIR] ✅ Session also stored locally on Render as backup (ID: ${shortId})`);
+  // Auto-expire after 120 minutes (increased from 60 to give more time for deployment)
+  setTimeout(() => LOCAL_SESSIONS.delete(shortId), 120 * 60 * 1000);
+  console.log(`[PAIR] ✅ Session also stored locally on Render as backup (ID: ${shortId}, expires in 120 min)`);
 
   return shortId; // 12 hex chars — yobbyx:~<12hex> = 20 chars total
 }
